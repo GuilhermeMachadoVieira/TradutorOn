@@ -4,7 +4,7 @@ from PyQt6.QtCore import Qt, QTimer, QPoint, QPropertyAnimation, QEasingCurve, p
 from PyQt6.QtGui import QPainter, QColor, QPen, QFont
 from loguru import logger
 from typing import List, Dict, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime
 
 
 class TranslationBox(QWidget):
@@ -15,18 +15,18 @@ class TranslationBox(QWidget):
         super().__init__(parent)
         self.original = original
         self.translated = translated
-        self.bbox = bbox  # (x, y, width, height)
+        self.bbox = bbox
         self._opacity = 1.0
         self.created_at = datetime.now()
         
         self.init_ui()
         self.move(int(position[0]), int(position[1]))
         
-        # Auto-hide após 5 segundos
+        # Auto-hide após 8 segundos
         self.hide_timer = QTimer()
         self.hide_timer.timeout.connect(self.start_fade_out)
         self.hide_timer.setSingleShot(True)
-        self.hide_timer.start(5000)
+        self.hide_timer.start(8000)
         
     def init_ui(self):
         """Inicializa UI."""
@@ -47,19 +47,19 @@ class TranslationBox(QWidget):
         self.translation_label = QLabel(self.translated)
         self.translation_label.setWordWrap(True)
         self.translation_label.setStyleSheet(
-            "color: white; font-size: 14px; font-weight: bold; "
-            "background: transparent; padding: 0px;"
+            "color: white; font-size: 13px; font-weight: bold; "
+            "background: transparent; padding: 0px; line-height: 1.3;"
         )
-        self.translation_label.setMaximumWidth(400)
+        self.translation_label.setMaximumWidth(350)
         
         # Label de texto original (menor)
-        original_short = self.original[:50] + '...' if len(self.original) > 50 else self.original
+        original_short = self.original[:80] + '...' if len(self.original) > 80 else self.original
         self.original_label = QLabel(f"'{original_short}'")
         self.original_label.setStyleSheet(
-            "color: rgba(255, 255, 255, 180); font-size: 10px; "
+            "color: rgba(255, 255, 255, 160); font-size: 9px; "
             "background: transparent; font-style: italic; padding: 0px;"
         )
-        self.original_label.setMaximumWidth(400)
+        self.original_label.setMaximumWidth(350)
         
         layout.addWidget(self.translation_label)
         layout.addWidget(self.original_label)
@@ -72,7 +72,7 @@ class TranslationBox(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Fundo semi-transparente com gradiente
+        # Fundo semi-transparente
         bg_color = QColor(33, 33, 33, int(220 * self._opacity))
         border_color = QColor(33, 150, 243, int(255 * self._opacity))
         
@@ -94,12 +94,10 @@ class TranslationBox(QWidget):
         
     @pyqtProperty(float)
     def opacity(self):
-        """Getter para opacidade."""
         return self._opacity
         
     @opacity.setter
     def opacity(self, value):
-        """Setter para opacidade."""
         self._opacity = value
         self.update()
         
@@ -111,13 +109,18 @@ class TranslationBox(QWidget):
 
 
 class TranslationOverlay(QWidget):
-    """Gerenciador de overlays de tradução."""
+    """Gerenciador de overlays de tradução com clustering inteligente."""
     
     def __init__(self, screen_area: Tuple[int, int, int, int]):
         super().__init__()
-        self.screen_area = screen_area  # (x, y, width, height)
+        self.screen_area = screen_area
         self.active_boxes = []
-        self.recent_translations = {}  # Cache de traduções recentes
+        
+        # Sistema de buffer para agrupar linhas
+        self.pending_results = []
+        self.buffer_timer = QTimer()
+        self.buffer_timer.timeout.connect(self._process_buffer)
+        self.buffer_timer.setSingleShot(True)
         
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
@@ -131,121 +134,183 @@ class TranslationOverlay(QWidget):
         x, y, w, h = screen_area
         self.setGeometry(x, y, w, h)
         
-        # Timer para limpar cache de traduções antigas
-        self.cleanup_timer = QTimer()
-        self.cleanup_timer.timeout.connect(self._cleanup_old_translations)
-        self.cleanup_timer.start(2000)  # A cada 2 segundos
-        
         logger.info(f"TranslationOverlay criado na área: {screen_area}")
         
     def show_translation(self, result: Dict):
-        """Mostra tradução no overlay."""
+        """Adiciona tradução ao buffer para agrupamento."""
         try:
             original = result.get('original', '')
             translated = result.get('translated', '')
-            bbox = result.get('bbox')  # BBox relativo à área capturada
+            bbox = result.get('bbox')
             
             if not bbox or not translated:
-                logger.warning(f"Resultado inválido: bbox={bbox}, translated={translated}")
                 return
                 
-            # Converter bbox relativo para absoluto
+            # Converter bbox
             abs_bbox = self._convert_bbox_to_absolute(bbox)
-            
             if not abs_bbox:
-                logger.warning("Falha ao converter bbox para absoluto")
                 return
                 
-            # Verificar se já existe tradução similar recente
-            if self._is_duplicate(translated, abs_bbox):
-                logger.debug(f"⚠️ Tradução duplicada ignorada: '{translated[:30]}'")
-                return
-                
-            # Calcular posição para o box (abaixo do texto original)
-            x, y, w, h = abs_bbox
-            box_x = x
-            box_y = y + h + 5  # 5px abaixo do texto
+            # Adicionar ao buffer
+            buffered_result = {
+                'original': original,
+                'translated': translated,
+                'bbox': abs_bbox,
+                'timestamp': datetime.now()
+            }
             
-            # Criar chave única para esta tradução
-            cache_key = self._make_cache_key(translated, abs_bbox)
+            self.pending_results.append(buffered_result)
             
-            # Registrar no cache
-            self.recent_translations[cache_key] = datetime.now()
+            # Reiniciar timer (espera 1.5 segundo após última chegada)
+            self.buffer_timer.stop()
+            self.buffer_timer.start(1500)
             
-            # Criar e mostrar caixa de tradução
-            translation_box = TranslationBox(
-                original=original,
-                translated=translated,
-                position=(box_x, box_y),
-                bbox=abs_bbox,
-                parent=None
-            )
-            
-            self.active_boxes.append(translation_box)
-            translation_box.show()
-            
-            # Limpar boxes antigas
-            self._cleanup_old_boxes()
-            
-            logger.debug(f"✅ Tradução exibida: '{translated[:30]}' em ({box_x}, {box_y})")
+            logger.debug(f"📥 Buffer: '{translated[:30]}' | Total: {len(self.pending_results)}")
                 
         except Exception as e:
-            logger.error(f"Erro ao mostrar tradução: {e}")
+            logger.error(f"Erro ao adicionar tradução: {e}")
             
-    def _is_duplicate(self, translated: str, bbox: Tuple[int, int, int, int]) -> bool:
-        """Verifica se tradução já existe recentemente na mesma área."""
-        cache_key = self._make_cache_key(translated, bbox)
+    def _process_buffer(self):
+        """Processa buffer e cria overlays agrupados."""
+        if not self.pending_results:
+            return
+            
+        logger.info(f"🔄 Processando buffer com {len(self.pending_results)} resultado(s)")
         
-        if cache_key in self.recent_translations:
-            # Verificar se ainda é recente (últimos 3 segundos)
-            age = datetime.now() - self.recent_translations[cache_key]
-            if age.total_seconds() < 3.0:
-                return True
+        # Clustering inteligente por posição E alinhamento
+        groups = self._smart_clustering(self.pending_results)
+        
+        logger.info(f"📦 Detectados {len(groups)} balão(ões) de fala")
+        
+        # Criar overlay para cada grupo
+        for i, group in enumerate(groups):
+            self._create_grouped_overlay(group, i+1)
+            
+        # Limpar buffer
+        self.pending_results.clear()
+        
+    def _smart_clustering(self, results: List[Dict]) -> List[List[Dict]]:
+        """
+        Clustering inteligente baseado em:
+        1. Alinhamento horizontal (mesmo X)
+        2. Proximidade vertical
+        3. Sobreposição horizontal
+        """
+        if not results:
+            return []
+            
+        if len(results) == 1:
+            return [results]
+            
+        # Ordenar por posição Y (de cima para baixo)
+        sorted_results = sorted(results, key=lambda r: r['bbox'][1])
+        
+        groups = []
+        visited = set()
+        
+        for i, result in enumerate(sorted_results):
+            if i in visited:
+                continue
                 
-        # Verificar se já existe box ativa similar
-        for box in self.active_boxes:
-            try:
-                if not box.isHidden():
-                    # Mesma tradução?
-                    if box.translated == translated:
-                        # Mesma região? (tolerância de 20px)
-                        if self._bbox_distance(box.bbox, bbox) < 20:
-                            return True
-            except RuntimeError:
-                pass
+            # Iniciar novo grupo
+            current_group = [result]
+            visited.add(i)
+            
+            bbox1 = result['bbox']
+            x1, y1, w1, h1 = bbox1
+            
+            # Procurar candidatos para agrupar
+            for j in range(i+1, len(sorted_results)):
+                if j in visited:
+                    continue
+                    
+                candidate = sorted_results[j]
+                bbox2 = candidate['bbox']
+                x2, y2, w2, h2 = bbox2
                 
-        return False
+                # Critérios para agrupar (linhas do mesmo balão):
+                # 1. Alinhamento X similar (±30px)
+                x_aligned = abs(x1 - x2) < 30
+                
+                # 2. Sobreposição horizontal
+                x_overlap = not (x1 + w1 < x2 or x2 + w2 < x1)
+                
+                # 3. Proximidade vertical (max 40px)
+                y_last = current_group[-1]['bbox'][1]
+                h_last = current_group[-1]['bbox'][3]
+                vertical_gap = y2 - (y_last + h_last)
+                close_vertically = vertical_gap < 40
+                
+                # 4. Não pode estar muito abaixo
+                too_far_down = vertical_gap > 80
+                
+                # Decidir se agrupa
+                should_group = (x_aligned or x_overlap) and close_vertically and not too_far_down
+                
+                if should_group:
+                    current_group.append(candidate)
+                    visited.add(j)
+                    logger.debug(f"  ↳ Agrupando linha (gap: {vertical_gap:.0f}px, x_aligned: {x_aligned})")
+                else:
+                    # Se não agrupa, parar de procurar mais abaixo
+                    if too_far_down:
+                        break
+                        
+            groups.append(current_group)
+            logger.debug(f"  📝 Balão {len(groups)}: {len(current_group)} linha(s)")
+            
+        return groups
         
-    def _make_cache_key(self, translated: str, bbox: Tuple[int, int, int, int]) -> str:
-        """Cria chave única para tradução."""
-        x, y, w, h = bbox
-        # Arredondar posição para tolerar pequenas variações
-        x_rounded = (x // 10) * 10
-        y_rounded = (y // 10) * 10
-        return f"{translated}_{x_rounded}_{y_rounded}"
+    def _create_grouped_overlay(self, group: List[Dict], balloon_num: int):
+        """Cria um overlay para um grupo de resultados."""
+        if not group:
+            return
+            
+        # Combinar textos (separar por linha)
+        originals = [r['original'] for r in group]
+        translateds = [r['translated'] for r in group]
         
-    def _bbox_distance(self, bbox1: Tuple, bbox2: Tuple) -> float:
-        """Calcula distância entre dois bboxes."""
-        x1, y1, w1, h1 = bbox1
-        x2, y2, w2, h2 = bbox2
+        combined_original = ' '.join(originals)  # Juntar com espaço
+        combined_translated = '\n'.join(translateds)  # Separar por linha
         
-        # Centro dos bboxes
-        cx1 = x1 + w1 / 2
-        cy1 = y1 + h1 / 2
-        cx2 = x2 + w2 / 2
-        cy2 = y2 + h2 / 2
+        # Calcular bbox envolvente
+        bboxes = [r['bbox'] for r in group]
+        x_min = min(b[0] for b in bboxes)
+        y_min = min(b[1] for b in bboxes)
+        x_max = max(b[0] + b[2] for b in bboxes)
+        y_max = max(b[1] + b[3] for b in bboxes)
         
-        # Distância euclidiana
-        distance = ((cx2 - cx1) ** 2 + (cy2 - cy1) ** 2) ** 0.5
-        return distance
+        combined_bbox = (x_min, y_min, x_max - x_min, y_max - y_min)
+        
+        # Calcular posição do overlay (abaixo do bbox)
+        box_x = x_min
+        box_y = y_max + 5
+        
+        # Criar overlay
+        translation_box = TranslationBox(
+            original=combined_original,
+            translated=combined_translated,
+            position=(box_x, box_y),
+            bbox=combined_bbox,
+            parent=None
+        )
+        
+        self.active_boxes.append(translation_box)
+        translation_box.show()
+        
+        # Limpar boxes antigas
+        self._cleanup_old_boxes()
+        
+        # Log compacto
+        translated_preview = combined_translated.replace('\n', ' | ')[:60]
+        logger.info(f"✅ Balão #{balloon_num}: \"{translated_preview}\" ({len(group)} linha(s))")
             
     def _convert_bbox_to_absolute(self, bbox: Tuple) -> Tuple[int, int, int, int]:
-        """Converte bbox relativo (à área capturada) para coordenadas absolutas da tela."""
+        """Converte bbox relativo para absoluto."""
         try:
             if not bbox or len(bbox) != 4:
                 return None
             
-            # Converter para float primeiro, depois para int
             rel_x = float(bbox[0])
             rel_y = float(bbox[1])
             rel_w = float(bbox[2])
@@ -253,13 +318,10 @@ class TranslationOverlay(QWidget):
             
             area_x, area_y, area_w, area_h = self.screen_area
             
-            # Coordenadas absolutas (convertendo para int)
             abs_x = int(area_x + rel_x)
             abs_y = int(area_y + rel_y)
             abs_w = int(rel_w)
             abs_h = int(rel_h)
-            
-            logger.debug(f"BBox: relativo={bbox} → absoluto=({abs_x}, {abs_y}, {abs_w}, {abs_h})")
             
             return (abs_x, abs_y, abs_w, abs_h)
             
@@ -268,98 +330,28 @@ class TranslationOverlay(QWidget):
             return None
             
     def _cleanup_old_boxes(self):
-        """Remove boxes que já foram deletadas."""
-        cleaned_boxes = []
+        """Remove boxes deletadas."""
+        cleaned = []
         for box in self.active_boxes:
             try:
-                # Tentar acessar box - se foi deletada, vai dar erro
                 if not box.isHidden():
-                    cleaned_boxes.append(box)
+                    cleaned.append(box)
             except RuntimeError:
-                # Box já foi deletada - ignorar
                 pass
-        self.active_boxes = cleaned_boxes
-        
-    def _cleanup_old_translations(self):
-        """Remove traduções antigas do cache."""
-        now = datetime.now()
-        expired_keys = []
-        
-        for key, timestamp in self.recent_translations.items():
-            age = now - timestamp
-            if age.total_seconds() > 5.0:  # Remover após 5 segundos
-                expired_keys.append(key)
-                
-        for key in expired_keys:
-            del self.recent_translations[key]
-            
-        if expired_keys:
-            logger.debug(f"🗑️ Cache limpo: {len(expired_keys)} traduções antigas removidas")
+        self.active_boxes = cleaned
         
     def clear_all(self):
         """Remove todas as traduções."""
+        self.buffer_timer.stop()
+        self.pending_results.clear()
+        
         for box in self.active_boxes:
             try:
                 box.deleteLater()
             except RuntimeError:
                 pass
         self.active_boxes.clear()
-        self.recent_translations.clear()
         
     def paintEvent(self, event):
-        """Desenha contorno da área (debug opcional)."""
-        # Não desenhar nada - overlay invisível
+        """Overlay invisível."""
         pass
-
-
-def test_overlay():
-    """Teste standalone do overlay."""
-    from PyQt6.QtWidgets import QApplication
-    import sys
-    
-    app = QApplication(sys.argv)
-    
-    # Simular área de captura (centro da tela)
-    screen_area = (500, 300, 800, 600)
-    
-    overlay = TranslationOverlay(screen_area)
-    overlay.show()
-    
-    # Simular tradução 1
-    QTimer.singleShot(1000, lambda: overlay.show_translation({
-        'original': 'こんにちは',
-        'translated': 'Olá!',
-        'bbox': (50, 50, 100, 30)
-    }))
-    
-    # Simular tradução duplicada (deve ser ignorada)
-    QTimer.singleShot(1500, lambda: overlay.show_translation({
-        'original': 'こんにちは',
-        'translated': 'Olá!',
-        'bbox': (50, 50, 100, 30)
-    }))
-    
-    # Simular tradução 2
-    QTimer.singleShot(2000, lambda: overlay.show_translation({
-        'original': 'ありがとう',
-        'translated': 'Obrigado!',
-        'bbox': (200, 150, 120, 30)
-    }))
-    
-    # Simular tradução 3
-    QTimer.singleShot(3000, lambda: overlay.show_translation({
-        'original': 'さようなら',
-        'translated': 'Até logo!',
-        'bbox': (100, 300, 140, 30)
-    }))
-    
-    print("✅ Overlay de teste ativo!")
-    print("💡 Você deve ver 3 traduções (duplicata será ignorada)")
-    print("🖱️ Clique em qualquer tradução para removê-la")
-    print("⏱️ Traduções desaparecem após 5 segundos")
-    
-    sys.exit(app.exec())
-
-
-if __name__ == "__main__":
-    test_overlay()
