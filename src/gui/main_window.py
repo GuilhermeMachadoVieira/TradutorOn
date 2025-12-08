@@ -1,337 +1,273 @@
-"""
-Janela principal da aplicação.
-"""
-
+"""Entry point da aplicação TradutorOn."""
+import sys
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QGroupBox, QTextEdit,
-    QStatusBar, QFrame
+    QApplication, QMainWindow, QWidget, QVBoxLayout,
+    QLabel, QPushButton, QTextEdit, QGroupBox
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QIcon, QFont
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QFont
 from loguru import logger
-
-from src.config.settings import SettingsManager
-from src.pipeline.processor import ProcessingPipeline
-from src.gui.area_selector import AreaSelector
-from src.gui.overlay import TranslationOverlay
-from src.gui.settings_dialog import SettingsDialog
+from datetime import datetime
+from src.config.logger import LoggerSetup
 
 
-class MainWindow(QMainWindow):
-    """Janela principal do Manga Translator Pro."""
-
+class SimpleMainWindow(QMainWindow):
+    """Janela principal simplificada."""
+    
     def __init__(self):
         super().__init__()
-        
-        self.settings = SettingsManager()
-        self.pipeline = None
-        self.overlay = None
-        self.selected_area = None
-        self.is_running = False
-        
         self.init_ui()
-        self.setup_shortcuts()
+        logger.info("GUI inicializada")
         
-        logger.info("MainWindow inicializada")
-
+        # Timer para atualizar tempo de execução
+        self.start_time = datetime.now()
+        self.update_timer = QTimer()
+        self.update_timer.timeout.connect(self.update_runtime)
+        self.update_timer.start(1000)  # Atualiza a cada 1 segundo
+        
     def init_ui(self):
-        """Inicializa interface do usuário."""
-        self.setWindowTitle("Manga Translator Pro")
-        self.setMinimumSize(450, 600)
+        """Inicializa interface."""
+        self.setWindowTitle("🌐 TradutorOn - Tradutor de Mangá em Tempo Real")
+        self.setMinimumSize(600, 700)
         
         # Widget central
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        
-        # Layout principal
-        layout = QVBoxLayout(central_widget)
-        layout.setSpacing(10)
-        layout.setContentsMargins(15, 15, 15, 15)
+        central = QWidget()
+        self.setCentralWidget(central)
+        layout = QVBoxLayout(central)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
         
         # Título
-        title = QLabel("🌐 Manga Translator Pro")
+        title = QLabel("🌐 TradutorOn")
         title_font = QFont()
-        title_font.setPointSize(16)
+        title_font.setPointSize(20)
         title_font.setBold(True)
         title.setFont(title_font)
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setStyleSheet("padding: 15px; color: #2196F3;")
         layout.addWidget(title)
         
+        subtitle = QLabel("Tradutor de Mangá em Tempo Real")
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        subtitle.setStyleSheet("font-size: 12px; color: #666; padding-bottom: 10px;")
+        layout.addWidget(subtitle)
+        
         # Status
-        self.status_group = self.create_status_group()
-        layout.addWidget(self.status_group)
+        status_group = QGroupBox("📊 Status do Sistema")
+        status_layout = QVBoxLayout()
         
-        # Área de captura
-        self.area_group = self.create_area_group()
-        layout.addWidget(self.area_group)
+        self.status_label = QLabel("✅ Sistema pronto!")
+        self.status_label.setStyleSheet("font-size: 16px; color: green; padding: 10px;")
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        # Controles
-        self.controls_group = self.create_controls_group()
-        layout.addWidget(self.controls_group)
+        self.runtime_label = QLabel("⏱️ Tempo de execução: 00:00:00")
+        self.runtime_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.runtime_label.setStyleSheet("font-size: 11px; color: #555; padding: 5px;")
+        
+        info_label = QLabel(
+            "🔤 Tradutores: Groq + Google\n"
+            "🤖 OCR: PaddleOCR\n"
+            "💾 Cache: SQLite\n"
+            "🖼️ Captura: MSS"
+        )
+        info_label.setStyleSheet("padding: 10px; font-size: 12px;")
+        
+        status_layout.addWidget(self.status_label)
+        status_layout.addWidget(self.runtime_label)
+        status_layout.addWidget(info_label)
+        status_group.setLayout(status_layout)
+        layout.addWidget(status_group)
+        
+        # Botões de teste
+        test_group = QGroupBox("🧪 Testes Rápidos")
+        test_layout = QVBoxLayout()
+        
+        test_config_btn = QPushButton("⚙️ Testar Configurações")
+        test_config_btn.setMinimumHeight(40)
+        test_config_btn.clicked.connect(self.test_config)
+        test_config_btn.setStyleSheet("font-size: 13px;")
+        
+        test_translators_btn = QPushButton("🌐 Testar Tradutores")
+        test_translators_btn.setMinimumHeight(40)
+        test_translators_btn.clicked.connect(self.test_translators)
+        test_translators_btn.setStyleSheet("font-size: 13px;")
+        
+        clear_log_btn = QPushButton("🗑️ Limpar Log")
+        clear_log_btn.setMinimumHeight(35)
+        clear_log_btn.clicked.connect(self.clear_log)
+        clear_log_btn.setStyleSheet("font-size: 12px;")
+        
+        start_full_btn = QPushButton("🚀 Iniciar Modo Completo")
+        start_full_btn.setMinimumHeight(50)
+        start_full_btn.setStyleSheet(
+            "background-color: #4CAF50; color: white; "
+            "font-size: 14px; font-weight: bold;"
+        )
+        start_full_btn.clicked.connect(self.start_full_mode)
+        
+        test_layout.addWidget(test_config_btn)
+        test_layout.addWidget(test_translators_btn)
+        test_layout.addWidget(clear_log_btn)
+        test_layout.addWidget(start_full_btn)
+        test_group.setLayout(test_layout)
+        layout.addWidget(test_group)
         
         # Log
-        self.log_group = self.create_log_group()
-        layout.addWidget(self.log_group)
-        
-        # Status bar
-        self.statusBar().showMessage("Pronto")
-        
-        # Timer para atualizar stats
-        self.stats_timer = QTimer()
-        self.stats_timer.timeout.connect(self.update_stats)
-        self.stats_timer.start(1000)  # Atualizar a cada 1s
-
-    def create_status_group(self) -> QGroupBox:
-        """Cria grupo de status."""
-        group = QGroupBox("📊 Status")
-        layout = QVBoxLayout()
-        
-        self.status_label = QLabel("⚫ Parado")
-        self.status_label.setStyleSheet("font-size: 14px; padding: 5px;")
-        
-        self.language_label = QLabel("🔤 Idioma: EN → PT")
-        self.translator_label = QLabel("🤖 Tradutor: Groq")
-        self.cache_label = QLabel("💾 Cache: 0 traduções")
-        
-        layout.addWidget(self.status_label)
-        layout.addWidget(self.language_label)
-        layout.addWidget(self.translator_label)
-        layout.addWidget(self.cache_label)
-        
-        group.setLayout(layout)
-        return group
-
-    def create_area_group(self) -> QGroupBox:
-        """Cria grupo de seleção de área."""
-        group = QGroupBox("📐 Área de Captura")
-        layout = QVBoxLayout()
-        
-        self.area_label = QLabel("Nenhuma área selecionada")
-        self.area_label.setStyleSheet("padding: 10px; background: #f0f0f0; border-radius: 5px;")
-        self.area_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        self.select_area_btn = QPushButton("🎯 Selecionar Área")
-        self.select_area_btn.clicked.connect(self.select_area)
-        self.select_area_btn.setMinimumHeight(40)
-        
-        layout.addWidget(self.area_label)
-        layout.addWidget(self.select_area_btn)
-        
-        group.setLayout(layout)
-        return group
-
-    def create_controls_group(self) -> QGroupBox:
-        """Cria grupo de controles."""
-        group = QGroupBox("🎮 Controles")
-        layout = QVBoxLayout()
-        
-        # Botões principais
-        self.start_btn = QPushButton("▶ Iniciar Tradução")
-        self.start_btn.setMinimumHeight(45)
-        self.start_btn.setStyleSheet("background-color: #4CAF50; color: white; font-size: 14px; font-weight: bold;")
-        self.start_btn.clicked.connect(self.start_translation)
-        
-        self.pause_btn = QPushButton("⏸ Pausar")
-        self.pause_btn.setMinimumHeight(40)
-        self.pause_btn.setEnabled(False)
-        self.pause_btn.clicked.connect(self.pause_translation)
-        
-        self.stop_btn = QPushButton("⏹ Parar")
-        self.stop_btn.setMinimumHeight(40)
-        self.stop_btn.setEnabled(False)
-        self.stop_btn.clicked.connect(self.stop_translation)
-        
-        # Botões secundários
-        btn_layout = QHBoxLayout()
-        
-        self.settings_btn = QPushButton("⚙️ Configurações")
-        self.settings_btn.clicked.connect(self.show_settings)
-        
-        self.clear_cache_btn = QPushButton("🗑️ Limpar Cache")
-        self.clear_cache_btn.clicked.connect(self.clear_cache)
-        
-        btn_layout.addWidget(self.settings_btn)
-        btn_layout.addWidget(self.clear_cache_btn)
-        
-        layout.addWidget(self.start_btn)
-        layout.addWidget(self.pause_btn)
-        layout.addWidget(self.stop_btn)
-        layout.addLayout(btn_layout)
-        
-        group.setLayout(layout)
-        return group
-
-    def create_log_group(self) -> QGroupBox:
-        """Cria grupo de log."""
-        group = QGroupBox("📝 Log")
-        layout = QVBoxLayout()
+        log_group = QGroupBox("📝 Log do Sistema")
+        log_layout = QVBoxLayout()
         
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
-        self.log_text.setMaximumHeight(150)
-        self.log_text.setStyleSheet("background: #1e1e1e; color: #00ff00; font-family: 'Courier New';")
-        
-        layout.addWidget(self.log_text)
-        group.setLayout(layout)
-        return group
-
-    def setup_shortcuts(self):
-        """Configura atalhos de teclado."""
-        from PyQt6.QtGui import QShortcut, QKeySequence
-        
-        # F5 - Iniciar/Parar
-        QShortcut(QKeySequence("F5"), self).activated.connect(self.toggle_translation)
-        
-        # F6 - Selecionar área
-        QShortcut(QKeySequence("F6"), self).activated.connect(self.select_area)
-        
-        # ESC - Parar
-        QShortcut(QKeySequence("Esc"), self).activated.connect(self.stop_translation)
-
-    def select_area(self):
-        """Abre seletor de área."""
-        self.log("Abrindo seletor de área...")
-        
-        selector = AreaSelector()
-        if selector.exec():
-            self.selected_area = selector.get_selected_area()
-            
-            if self.selected_area:
-                w = self.selected_area.width
-                h = self.selected_area.height
-                self.area_label.setText(f"✅ Área: {w}x{h} px")
-                self.log(f"Área selecionada: {w}x{h} px")
-            else:
-                self.area_label.setText("❌ Seleção cancelada")
-
-    def start_translation(self):
-        """Inicia tradução."""
-        if not self.selected_area:
-            self.log("❌ Selecione uma área primeiro!")
-            return
-        
-        self.log("▶ Iniciando tradução...")
-        
-        # Criar pipeline
-        self.pipeline = ProcessingPipeline(
-            settings_manager=self.settings,
-            on_result_callback=self.on_translation_result,
-            num_ocr_workers=2
+        self.log_text.setMinimumHeight(200)
+        self.log_text.setStyleSheet(
+            "background: #1e1e1e; color: #00ff00; "
+            "font-family: 'Courier New'; font-size: 11px; padding: 8px;"
         )
         
-        # Criar overlay
-        self.overlay = TranslationOverlay()
-        self.overlay.show()
+        log_layout.addWidget(self.log_text)
+        log_group.setLayout(log_layout)
+        layout.addWidget(log_group)
         
-        # Iniciar
-        self.pipeline.start(self.selected_area)
-        self.is_running = True
+        # Status bar
+        self.statusBar().showMessage("✅ Pronto para iniciar")
         
-        # Atualizar UI
-        self.status_label.setText("🟢 Rodando")
-        self.status_label.setStyleSheet("font-size: 14px; padding: 5px; color: green; font-weight: bold;")
-        self.start_btn.setEnabled(False)
-        self.pause_btn.setEnabled(True)
-        self.stop_btn.setEnabled(True)
-        self.select_area_btn.setEnabled(False)
+        # Log inicial
+        self.log("=" * 60)
+        self.log("✅ TradutorOn GUI carregada com sucesso!")
+        self.log(f"🕐 Iniciado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+        self.log("=" * 60)
+        self.log("💡 Use os botões acima para testar o sistema")
+        self.log("")
         
-        self.statusBar().showMessage("Tradução em andamento...")
-        self.log("✅ Pipeline iniciada!")
-
-    def pause_translation(self):
-        """Pausa tradução."""
-        # TODO: Implementar pausa
-        self.log("⏸ Pausado (não implementado ainda)")
-
-    def stop_translation(self):
-        """Para tradução."""
-        if not self.pipeline:
-            return
-        
-        self.log("⏹ Parando tradução...")
-        
-        # Parar pipeline
-        self.pipeline.stop()
-        self.pipeline = None
-        
-        # Fechar overlay
-        if self.overlay:
-            self.overlay.close()
-            self.overlay = None
-        
-        self.is_running = False
-        
-        # Atualizar UI
-        self.status_label.setText("⚫ Parado")
-        self.status_label.setStyleSheet("font-size: 14px; padding: 5px;")
-        self.start_btn.setEnabled(True)
-        self.pause_btn.setEnabled(False)
-        self.stop_btn.setEnabled(False)
-        self.select_area_btn.setEnabled(True)
-        
-        self.statusBar().showMessage("Pronto")
-        self.log("✅ Pipeline parada")
-
-    def toggle_translation(self):
-        """Alterna entre iniciar/parar."""
-        if self.is_running:
-            self.stop_translation()
-        else:
-            self.start_translation()
-
-    def on_translation_result(self, results):
-        """Callback de resultados de tradução."""
-        if not results:
-            return
-        
-        for result in results:
-            # Atualizar overlay
-            if self.overlay:
-                self.overlay.add_translation(
-                    bbox=result['bbox'],
-                    original=result['original'],
-                    translated=result['translated']
-                )
-            
-            # Log
-            self.log(f"📝 {result['original']} → {result['translated']}")
-
-    def update_stats(self):
-        """Atualiza estatísticas."""
-        if self.pipeline:
-            stats = self.pipeline.get_stats()
-            
-            cache_stats = stats.get('cache', {})
-            total = cache_stats.get('total_translations', 0)
-            size_mb = cache_stats.get('db_size_mb', 0)
-            
-            self.cache_label.setText(f"💾 Cache: {total} traduções ({size_mb:.2f} MB)")
-            
-            translators = stats.get('translators', [])
-            if translators:
-                self.translator_label.setText(f"🤖 Tradutor: {translators[0]}")
-
-    def show_settings(self):
-        """Mostra diálogo de configurações."""
-        dialog = SettingsDialog(self.settings, self)
-        dialog.exec()
-
-    def clear_cache(self):
-        """Limpa cache."""
-        # TODO: Implementar limpeza de cache
-        self.log("🗑️ Limpando cache...")
-
     def log(self, message: str):
         """Adiciona mensagem ao log."""
-        self.log_text.append(f"> {message}")
-        # Auto-scroll
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.log_text.append(f"[{timestamp}] {message}")
+        # Auto-scroll para o final
         self.log_text.verticalScrollBar().setValue(
             self.log_text.verticalScrollBar().maximum()
         )
+        
+    def clear_log(self):
+        """Limpa o log."""
+        self.log_text.clear()
+        self.log("🗑️ Log limpo!")
+        
+    def update_runtime(self):
+        """Atualiza tempo de execução."""
+        elapsed = datetime.now() - self.start_time
+        hours, remainder = divmod(int(elapsed.total_seconds()), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        self.runtime_label.setText(
+            f"⏱️ Tempo de execução: {hours:02d}:{minutes:02d}:{seconds:02d}"
+        )
+        
+    def test_config(self):
+        """Testa configurações."""
+        self.log("")
+        self.log("⚙️ Testando configurações...")
+        self.statusBar().showMessage("⏳ Testando configurações...")
+        
+        try:
+            from src.config.settings import SettingsManager
+            settings = SettingsManager()
+            
+            # Testar API keys
+            groq_key = settings.get_api_key('groq')
+            if groq_key:
+                self.log(f"✅ Groq API configurada ({len(groq_key)} chars)")
+            else:
+                self.log("⚠️ Groq API não configurada")
+            
+            # Testar configurações
+            frame_rate = settings.get('capture.frame_rate', 2)
+            self.log(f"✅ Frame rate: {frame_rate} fps")
+            
+            ocr_lang = settings.get('ocr.languages', ['ja', 'en'])
+            self.log(f"✅ Idiomas OCR: {', '.join(ocr_lang)}")
+            
+            cache_size = settings.get('cache.max_entries', 1000)
+            self.log(f"✅ Cache máximo: {cache_size} entradas")
+            
+            self.log("✅ Todas configurações OK!")
+            self.statusBar().showMessage("✅ Configurações testadas com sucesso")
+            
+        except Exception as e:
+            self.log(f"❌ Erro ao testar configurações: {e}")
+            self.statusBar().showMessage(f"❌ Erro: {e}")
+            logger.error(f"Erro ao testar config: {e}")
+            
+    def test_translators(self):
+        """Testa tradutores."""
+        self.log("")
+        self.log("🌐 Testando tradutores...")
+        self.log("⏳ Carregando... (pode demorar ~5s)")
+        self.statusBar().showMessage("⏳ Testando tradutores...")
+        
+        try:
+            from src.config.settings import SettingsManager
+            from src.translation.translator import TranslationService
+            
+            settings = SettingsManager()
+            groq_key = settings.get_api_key('groq')
+            
+            service = TranslationService(
+                groq_key=groq_key,
+                google_enabled=True,
+                ollama_enabled=False
+            )
+            
+            # Testar tradução simples
+            test_text = "Hello, world!"
+            self.log(f"📝 Texto original: '{test_text}'")
+            
+            result = service.translate(test_text, "en", "pt")
+            
+            self.log(f"✅ Tradução: '{result.translated_text}'")
+            self.log(f"✅ Provedor: {result.provider.value}")
+            self.log(f"✅ Tempo: {result.processing_time:.2f}s")
+            self.log(f"✅ Cache: {'Sim' if result.from_cache else 'Não'}")
+            self.log("✅ Tradutores funcionando perfeitamente!")
+            
+            self.statusBar().showMessage("✅ Tradutores testados com sucesso")
+            
+        except Exception as e:
+            self.log(f"❌ Erro ao testar tradutores: {e}")
+            self.statusBar().showMessage(f"❌ Erro: {e}")
+            logger.error(f"Erro ao testar tradutores: {e}")
+            
+    def start_full_mode(self):
+        """Inicia modo completo (com OCR)."""
+        self.log("")
+        self.log("🚀 Iniciando modo completo...")
+        self.log("⚠️ Modo completo será implementado na FASE 1.2+")
+        self.log("💡 Aguarde as próximas atualizações!")
+        self.statusBar().showMessage("⚠️ Modo completo em desenvolvimento")
 
-    def closeEvent(self, event):
-        """Evento de fechamento."""
-        if self.is_running:
-            self.stop_translation()
-        event.accept()
+
+def main():
+    """Função principal."""
+    # Inicializar logger
+    LoggerSetup.initialize(level="INFO")
+    
+    logger.info("=" * 60)
+    logger.info("TRADUTOR ON - GUI INICIANDO")
+    logger.info("=" * 60)
+    
+    # Criar aplicação
+    app = QApplication(sys.argv)
+    app.setApplicationName("TradutorOn")
+    app.setStyle("Fusion")
+    
+    # Criar janela
+    window = SimpleMainWindow()
+    window.show()
+    
+    logger.info("✅ Aplicação iniciada com sucesso")
+    
+    # Executar
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()

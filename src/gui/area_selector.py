@@ -1,139 +1,171 @@
-"""
-Seletor visual de área da tela (arrastar mouse).
-"""
-
-from PyQt6.QtWidgets import QDialog, QApplication
-from PyQt6.QtCore import Qt, QRect, QPoint
-from PyQt6.QtGui import QPainter, QColor, QPen, QScreen
+"""Seletor de área da tela com drag-drop."""
+from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout
+from PyQt6.QtCore import Qt, QRect, QPoint, pyqtSignal
+from PyQt6.QtGui import QPainter, QColor, QPen, QFont, QScreen
 from loguru import logger
 
-from src.utils.types import ScreenArea
-from src.capture.monitor_detector import MonitorDetector
 
-
-class AreaSelector(QDialog):
-    """Diálogo para selecionar área da tela."""
-
+class AreaSelector(QWidget):
+    """Widget para selecionar área da tela com drag-drop."""
+    
+    # Signal emitido quando área é selecionada
+    area_selected = pyqtSignal(tuple)  # (x, y, width, height)
+    
     def __init__(self):
         super().__init__()
-        
-        self.detector = MonitorDetector()
-        self.start_point = None
-        self.end_point = None
-        self.selected_area = None
-        
+        self.start_pos = None
+        self.end_pos = None
+        self.drawing = False
         self.init_ui()
         
-        logger.info("AreaSelector inicializado")
-
     def init_ui(self):
-        """Inicializa UI fullscreen transparente."""
-        # Configurar janela fullscreen sem bordas
+        """Inicializa UI em fullscreen."""
+        # Configurar janela
+        self.setWindowTitle("Selecione a Área - TradutorOn")
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool
+            Qt.WindowType.WindowStaysOnTopHint
         )
-        
-        # Tornar semi-transparente
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
-        # Fullscreen em todos os monitores
-        screen_geometry = QApplication.primaryScreen().virtualGeometry()
-        self.setGeometry(screen_geometry)
+        # Pegar tamanho da tela
+        screen = QScreen.availableGeometry(self.screen())
+        self.setGeometry(screen)
         
-        # Cursor crosshair
+        # Cursor de cruz
         self.setCursor(Qt.CursorShape.CrossCursor)
         
-        # Instruções
-        self.setWindowTitle("Selecione a área - Arraste o mouse | ESC para cancelar")
-
+        logger.info("AreaSelector inicializado")
+        
     def paintEvent(self, event):
-        """Desenha retângulo de seleção."""
+        """Desenha overlay e retângulo de seleção."""
         painter = QPainter(self)
         
-        # Fundo escuro semi-transparente
-        painter.fillRect(self.rect(), QColor(0, 0, 0, 100))
+        # Overlay semi-transparente escuro
+        overlay_color = QColor(0, 0, 0, 150)
+        painter.fillRect(self.rect(), overlay_color)
         
-        # Se está selecionando, desenhar retângulo
-        if self.start_point and self.end_point:
-            # Calcular retângulo
-            rect = QRect(self.start_point, self.end_point).normalized()
+        # Instruções no topo
+        painter.setPen(QColor(255, 255, 255))
+        font = QFont("Arial", 16, QFont.Weight.Bold)
+        painter.setFont(font)
+        text = "🖱️ Arraste para selecionar a área | ESC para cancelar"
+        text_rect = painter.fontMetrics().boundingRect(text)
+        text_x = (self.width() - text_rect.width()) // 2
+        painter.drawText(text_x, 40, text)
+        
+        # Desenhar retângulo de seleção se estiver desenhando
+        if self.start_pos and self.end_pos:
+            selection_rect = self._get_selection_rect()
             
-            # Limpar área selecionada (transparente)
+            # Área clara (sem overlay)
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
-            painter.fillRect(rect, Qt.GlobalColor.transparent)
+            painter.fillRect(selection_rect, QColor(0, 0, 0, 0))
+            
+            # Voltar ao modo normal
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
             
-            # Borda azul brilhante
-            pen = QPen(QColor(0, 150, 255), 3, Qt.PenStyle.SolidLine)
+            # Borda do retângulo
+            pen = QPen(QColor(33, 150, 243), 3, Qt.PenStyle.SolidLine)
             painter.setPen(pen)
-            painter.drawRect(rect)
+            painter.drawRect(selection_rect)
             
-            # Texto com dimensões
-            width = rect.width()
-            height = rect.height()
-            text = f"{width}x{height} px"
-            
-            # Fundo do texto
-            text_rect = painter.fontMetrics().boundingRect(text)
-            text_rect.moveTopLeft(rect.topLeft() + QPoint(5, -25))
-            text_rect.adjust(-5, -2, 5, 2)
-            
-            painter.fillRect(text_rect, QColor(0, 0, 0, 180))
-            painter.setPen(QColor(255, 255, 255))
-            painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, text)
-
+            # Dimensões
+            if selection_rect.width() > 100 and selection_rect.height() > 50:
+                dim_font = QFont("Arial", 12)
+                painter.setFont(dim_font)
+                dim_text = f"{selection_rect.width()} x {selection_rect.height()} px"
+                
+                # Fundo para texto
+                text_rect = painter.fontMetrics().boundingRect(dim_text)
+                bg_rect = QRect(
+                    selection_rect.x() + 5,
+                    selection_rect.y() - text_rect.height() - 10,
+                    text_rect.width() + 10,
+                    text_rect.height() + 8
+                )
+                painter.fillRect(bg_rect, QColor(33, 150, 243, 200))
+                
+                # Texto
+                painter.setPen(QColor(255, 255, 255))
+                painter.drawText(
+                    bg_rect.x() + 5,
+                    bg_rect.y() + text_rect.height() + 2,
+                    dim_text
+                )
+                
     def mousePressEvent(self, event):
-        """Início da seleção."""
+        """Inicia seleção."""
         if event.button() == Qt.MouseButton.LeftButton:
-            self.start_point = event.pos()
-            self.end_point = event.pos()
-            self.update()
-
+            self.start_pos = event.pos()
+            self.end_pos = event.pos()
+            self.drawing = True
+            logger.debug(f"Início seleção: {self.start_pos}")
+            
     def mouseMoveEvent(self, event):
         """Atualiza seleção."""
-        if self.start_point:
-            self.end_point = event.pos()
-            self.update()
-
+        if self.drawing:
+            self.end_pos = event.pos()
+            self.update()  # Redesenha
+            
     def mouseReleaseEvent(self, event):
         """Finaliza seleção."""
-        if event.button() == Qt.MouseButton.LeftButton and self.start_point:
-            self.end_point = event.pos()
+        if event.button() == Qt.MouseButton.LeftButton and self.drawing:
+            self.end_pos = event.pos()
+            self.drawing = False
             
-            # Calcular área selecionada
-            rect = QRect(self.start_point, self.end_point).normalized()
-            
-            # Validar tamanho mínimo
-            if rect.width() < 50 or rect.height() < 50:
-                logger.warning("Área muito pequena (mínimo 50x50)")
-                self.start_point = None
-                self.end_point = None
+            # Verificar se área é válida (mínimo 50x50)
+            rect = self._get_selection_rect()
+            if rect.width() >= 50 and rect.height() >= 50:
+                area = (rect.x(), rect.y(), rect.width(), rect.height())
+                logger.info(f"Área selecionada: {area}")
+                self.area_selected.emit(area)
+                self.close()
+            else:
+                logger.warning("Área muito pequena, selecione novamente")
+                self.start_pos = None
+                self.end_pos = None
                 self.update()
-                return
-            
-            # Converter para coordenadas globais
-            global_rect = rect.translated(self.geometry().topLeft())
-            
-            # Criar ScreenArea
-            self.selected_area = ScreenArea(
-                x1=global_rect.x(),
-                y1=global_rect.y(),
-                x2=global_rect.x() + global_rect.width(),
-                y2=global_rect.y() + global_rect.height(),
-                monitor_index=0  # TODO: Detectar monitor correto
-            )
-            
-            logger.info(f"Área selecionada: {self.selected_area.width}x{self.selected_area.height}")
-            self.accept()
-
+                
     def keyPressEvent(self, event):
-        """Cancela com ESC."""
+        """Cancela seleção com ESC."""
         if event.key() == Qt.Key.Key_Escape:
-            logger.info("Seleção cancelada")
-            self.reject()
+            logger.info("Seleção cancelada pelo usuário")
+            self.close()
+            
+    def _get_selection_rect(self) -> QRect:
+        """Retorna retângulo da seleção."""
+        if not self.start_pos or not self.end_pos:
+            return QRect()
+            
+        x = min(self.start_pos.x(), self.end_pos.x())
+        y = min(self.start_pos.y(), self.end_pos.y())
+        width = abs(self.end_pos.x() - self.start_pos.x())
+        height = abs(self.end_pos.y() - self.start_pos.y())
+        
+        return QRect(x, y, width, height)
 
-    def get_selected_area(self) -> ScreenArea:
-        """Retorna área selecionada."""
-        return self.selected_area
+
+def test_area_selector():
+    """Teste standalone do AreaSelector."""
+    from PyQt6.QtWidgets import QApplication
+    import sys
+    
+    app = QApplication(sys.argv)
+    
+    def on_area_selected(area):
+        x, y, w, h = area
+        print(f"✅ Área selecionada:")
+        print(f"   Posição: ({x}, {y})")
+        print(f"   Tamanho: {w}x{h} px")
+        app.quit()
+    
+    selector = AreaSelector()
+    selector.area_selected.connect(on_area_selected)
+    selector.show()
+    
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    test_area_selector()

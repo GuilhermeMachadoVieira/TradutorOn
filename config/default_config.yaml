@@ -1,57 +1,46 @@
-# Screen Capture
-capture:
-  monitor_index: 0
-  frame_rate: 2
-  detection_threshold: 0.08
-
-# OCR (PaddleOCR)
-ocr:
-  languages: ['en', 'ko']
-  use_gpu: false
-  model_cache_dir: './models'
-  confidence_threshold: 0.3
-  cache_size: 100
-
-# Translation - Provedores Gratuitos
-translation:
-  # Groq API (recomendado - grátis)
-  groq:
-    enabled: true
-    model: 'llama-3.3-70b-versatile'
-    
-  # Google Translate (sempre habilitado)
-  google:
-    enabled: true
-    
-  # Ollama (local - requer instalação)
-  ollama:
-    enabled: false
-    model: 'llama3.1'
-    base_url: 'http://localhost:11434'
-
-# Cache
 cache:
-  db_path: './cache/translations.db'
+  db_path: ./cache/translations.db
   max_entries: 100000
   ttl_seconds: null
-
-# Overlay
+capture:
+  detection_threshold: 0.08
+  frame_rate: 2
+  monitor_index: 0
+  region:
+  - 687
+  - 307
+  - 227
+  - 93
+logging:
+  file: ./logs/translator.log
+  level: INFO
+  rotation: 100 MB
+ocr:
+  cache_size: 100
+  confidence_threshold: 0.3
+  languages:
+  - en
+  - ko
+  model_cache_dir: ./models
+  use_gpu: false
 overlay:
-  font_size: 14
-  text_color: '#000000'
   bg_color: '#FFFFFF'
   bg_opacity: 0.95
+  font_size: 14
   padding: 5
-
-# UI
+  text_color: '#000000'
+translation:
+  google:
+    enabled: true
+  groq:
+    enabled: true
+    model: llama-3.3-70b-versatile
+  ollama:
+    base_url: http://localhost:11434
+    enabled: false
+    model: llama3.1
 ui:
-  window_width: 400
-  window_height: 500
   always_on_top: true
-  theme: 'dark'
-
-# Logging
-logging:
-  level: 'INFO'
-  file: './logs/translator.log'
-  rotation: '100 MB'
+  theme: dark
+  window_height: 500
+  window_width: 400
