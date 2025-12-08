@@ -7,10 +7,10 @@ capture:
   frame_rate: 2
   monitor_index: 0
   region:
-  - 684
-  - 302
-  - 253
-  - 118
+  - 680
+  - 301
+  - 324
+  - 127
 logging:
   file: ./logs/translator.log
   level: INFO
