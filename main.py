@@ -10,7 +10,7 @@ from loguru import logger
 from datetime import datetime
 from src.config.logger import LoggerSetup
 from src.gui.area_selector import AreaSelector
-from src.gui.translation_overlay import TranslationOverlay
+from src.gui.translation_overlay import TranslationReplacer
 from src.gui.settings_dialog import SettingsDialog
 from src.gui.translation_history import TranslationHistoryDialog
 from src.utils.language_detector import LanguageDetector
@@ -608,7 +608,7 @@ class SimpleMainWindow(QMainWindow):
         if self.translation_overlay:
             self.translation_overlay.clear_all()
         else:
-            self.translation_overlay = TranslationOverlay(self.selected_area)
+            self.translation_overlay = TranslationReplacer(self.selected_area)
             self.translation_overlay.show()
             
         # Simular traduções
@@ -691,7 +691,7 @@ class SimpleMainWindow(QMainWindow):
         if self.translation_overlay:
             self.translation_overlay.clear_all()
         else:
-            self.translation_overlay = TranslationOverlay(self.selected_area)
+            self.translation_overlay = TranslationReplacer(self.selected_area)
             self.translation_overlay.show()
         
         # Atualizar UI
