@@ -1,0 +1,9 @@
+# Exemplo de glossário para PT-BR mangá/manhwa
+replace_exact:
+  "senpai": "senpai"
+  "onee-chan": "irmã mais velha"
+  "onegai": "por favor"
+
+replace_substring:
+  "Hero Party": "Equipe do Herói"
+  "Guild": "Guilda"

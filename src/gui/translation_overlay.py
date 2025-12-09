@@ -129,7 +129,7 @@ class BalloonTextReplacement(QWidget):
         self.hide_timer = QTimer()
         self.hide_timer.timeout.connect(self.start_fade_out)
         self.hide_timer.setSingleShot(True)
-        self.hide_timer.start(10000)
+        self.hide_timer.start(26000)
 
         logger.debug(
             f"🎈 Texto: {original_text[:30]} → {translated_text[:30]} "

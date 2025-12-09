@@ -3,14 +3,14 @@ cache:
   max_entries: 100000
   ttl_seconds: null
 capture:
-  detection_threshold: 0.08
-  frame_rate: 2
+  detection_threshold: 0.2
+  frame_rate: 5
   monitor_index: 0
   region:
-  - 408
+  - 354
   - 123
-  - 535
-  - 600
+  - 640
+  - 595
 logging:
   file: ./logs/translator.log
   level: INFO
@@ -37,8 +37,8 @@ translation:
     model: llama-3.3-70b-versatile
   ollama:
     base_url: http://localhost:11434
-    enabled: false
-    model: llama3.1
+    enabled: true
+    model: qwen2.5:7b
 ui:
   always_on_top: true
   theme: dark

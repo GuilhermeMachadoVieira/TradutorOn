@@ -553,42 +553,65 @@ class SimpleMainWindow(QMainWindow):
             logger.error(f"Erro ao testar config: {e}")
             
     def test_translators(self):
-        """Testa tradutores."""
+        """Testa tradutores (Groq, Google e, opcionalmente, Ollama)."""
         self.log("")
-        self.log("🌐 Testando tradutores...")
-        self.log("⏳ Carregando... (pode demorar ~5s)")
-        self.statusBar().showMessage("⏳ Testando tradutores...")
-        
+        self.log("Testando tradutores...")
+        self.log("Carregando... pode demorar ~5s")
+        self.statusBar().showMessage("Testando tradutores...")
+
         try:
             from src.config.settings import SettingsManager
             from src.translation.translator import TranslationService
-            
+
             settings = SettingsManager()
-            groq_key = settings.get_api_key('groq')
-            
+            groq_key = settings.get_api_key("groq")
+
+            # Ler configurações do Ollama a partir do YAML
+            ollama_enabled = settings.get("translation.ollama.enabled", False)
+            ollama_model = settings.get(
+                "translation.ollama.model", "qwen2.5:7b"
+            )  # modelo padrão para testes
+            ollama_url = settings.get(
+                "translation.ollama.base_url", "http://localhost:11434"
+            )
+
             service = TranslationService(
                 groq_key=groq_key,
                 google_enabled=True,
-                ollama_enabled=False
+                ollama_enabled=ollama_enabled,
+                groq_model=settings.get(
+                    "translation.groq.model", "llama-3.3-70b-versatile"
+                ),
+                ollama_model=ollama_model,
+                ollama_url=ollama_url,
             )
-            
+
             test_text = "Hello, world!"
-            self.log(f"📝 Texto original: '{test_text}'")
-            
+            self.log(f"Texto original: {test_text}")
+
             result = service.translate(test_text, "en", "pt")
-            
-            self.log(f"✅ Tradução: '{result.translated_text}'")
-            self.log(f"✅ Provedor: {result.provider.value}")
-            self.log(f"✅ Tempo: {result.processing_time:.2f}s")
-            self.log(f"✅ Cache: {'Sim' if result.from_cache else 'Não'}")
-            self.log("✅ Tradutores funcionando perfeitamente!")
-            
-            self.statusBar().showMessage("✅ Tradutores testados com sucesso")
-            
+
+            self.log(f"Tradução: {result.translated_text}")
+            self.log(f"Provedor: {result.provider.value}")
+            # Esses campos dependem da sua TranslationResult; mantidos como no código atual
+            self.log(f"Tempo: {getattr(result, 'processing_time', 0.0):.2f}s")
+            self.log(
+                f"Cache: {'Sim' if getattr(result, 'from_cache', False) else 'Não'}"
+            )
+
+            if ollama_enabled:
+                self.log(
+                    f"Ollama habilitado via configs (modelo={ollama_model}, url={ollama_url})"
+                )
+
+            self.log("Tradutores funcionando perfeitamente!")
+            self.statusBar().showMessage("Tradutores testados com sucesso")
+
         except Exception as e:
-            self.log(f"❌ Erro ao testar tradutores: {e}")
-            self.statusBar().showMessage(f"❌ Erro: {e}")
+            self.log(f"Erro ao testar tradutores: {e}")
+            self.statusBar().showMessage(f"Erro: {e}")
             logger.error(f"Erro ao testar tradutores: {e}")
+
             
     def test_overlay(self):
         """Testa overlay de tradução."""

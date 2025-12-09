@@ -83,6 +83,9 @@ class TranslationResult:
     provider: TranslationProvider
     confidence: float = 1.0
     timestamp: datetime = None
+    # Fase 7 – métricas de desempenho e cache
+    processing_time: float = 0.0  # tempo total da chamada de TranslationService.translate (segundos)
+    from_cache: bool = False      # sempre False no TranslationService; cache real é no pipeline
 
     def __post_init__(self):
         if self.timestamp is None:
